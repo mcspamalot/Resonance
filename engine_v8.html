@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resonance Engine v8 (Matrix Audio)</title>
+<style>
+    body { background: #101010; color: #ccc; font-family: 'Courier New', monospace; padding: 20px; max-width: 600px; margin: 0 auto; }
+    h1 { color: #00ff88; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 2px; }
+    .sub { font-size: 0.8em; color: #666; margin-bottom: 20px; }
+    .status { color: #00ff88; font-weight: bold; margin-bottom: 20px; border: 1px solid #333; padding: 10px; text-align: center; background: #151515; }
+    
+    /* BUTTONS */
+    button { width: 100%; padding: 15px; background: #222; color: #00ff88; border: 2px solid #00ff88; font-weight: bold; cursor: pointer; font-size: 1.1em; margin-bottom: 20px; text-transform: uppercase; transition: 0.2s; }
+    button:hover { background: #00ff88; color: #000; box-shadow: 0 0 15px rgba(0,255,136,0.3); }
+    
+    /* MODULES */
+    .module { background: #1a1a1a; border: 1px solid #333; padding: 15px; margin-bottom: 15px; border-radius: 4px; position: relative; }
+    .module h3 { margin: 0 0 10px 0; border-bottom: 1px dashed #444; color: #ddd; font-size: 1em; display: flex; justify-content: space-between; }
+    .module h3 span { color: #00ff88; font-size: 0.8em; }
+    
+    /* CONTROLS */
+    .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    label { width: 110px; font-size: 0.85em; color: #aaa; }
+    input[type=range] { flex: 1; margin: 0 10px; accent-color: #00ff88; height: 5px; background: #333; border-radius: 5px; }
+    input[type=number], select { width: 60px; background: #000; color: #00ff88; border: 1px solid #444; padding: 4px; font-family: inherit; }
+    
+    /* LED */
+    #beat-led { width: 12px; height: 12px; background: #333; border-radius: 50%; margin-left: 10px; transition: background 0.05s; }
+</style>
+</head>
+<body>
+
+<h1>Resonance Engine v8</h1>
+<div class="sub">True Stereo Matrix Routing</div>
+<div class="status" id="status">System Status: WAITING...</div>
+<button id="start">INITIALIZE AUDIO SYSTEM</button>
+
+<div class="module">
+    <h3>1. Carrier Tone <span>(Left Ear Default)</span></h3>
+    <div class="row"><label>Frequency</label><input type="range" id="baseSlide" min="40" max="300" value="110"><input type="number" id="baseNum" value="110"></div>
+    <div class="row"><label>Master Vol</label><input type="range" id="baseVol" min="0" max="1" step="0.01" value="0.5"></div>
+    <div class="row"><label>Pan (L/R)</label><input type="range" id="basePan" min="-1" max="1" step="0.1" value="-1"></div>
+</div>
+
+<div class="module">
+    <h3>2. Offset Tone <span>(Right Ear Default)</span></h3>
+    <div class="row"><label>Delta (+Hz)</label><input type="range" id="deltaSlide" min="0" max="40" step="0.1" value="4"><input type="number" id="deltaNum" value="4"></div>
+    <div class="row"><label>Master Vol</label><input type="range" id="deltaVol" min="0" max="1" step="0.01" value="0.5"></div>
+    <div class="row"><label>Pan (L/R)</label><input type="range" id="deltaPan" min="-1" max="1" step="0.1" value="1"></div>
+</div>
+
+<div class="module">
+    <h3>3. Atmosphere <span>(Noise)</span></h3>
+    <div class="row">
+        <label>Type</label>
+        <select id="nType"><option value="brown">Brown</option><option value="pink">Pink</option><option value="white">White</option></select>
+        <input type="range" id="nFilter" min="50" max="10000" step="50" value="400">
+    </div>
+    <div class="row"><label>Volume</label><input type="range" id="nVol" min="0" max="1" step="0.01" value="0"></div>
+</div>
+
+<div class="module">
+    <h3>4. Heart Sync <span>(808)</span></h3>
+    <div class="row"><label>BPM</label><input type="range" id="bpmSlide" min="40" max="400" value="119"><input type="number" id="bpmNum" value="119"></div>
+    <div class="row"><label>Kick Tone</label><input type="range" id="kTone" min="50" max="300" value="150"></div>
+    <div class="row"><label>Kick Decay</label><input type="range" id="kDecay" min="0.1" max="1.0" step="0.1" value="0.5"></div>
+    <div class="row"><label>Kick Vol</label><input type="range" id="kVol" min="0" max="1" step="0.05" value="0"></div>
+    <div class="row"><label>Active</label><input type="checkbox" id="kToggle"><div id="beat-led"></div></div>
+</div>
+
+<script>
+window.addEventListener('load', function() {
+    var st = document.getElementById('status');
+    st.innerText = "System Status: READY (Click Button)";
+
+    // Audio Context & Nodes
+    var ctx, merger;
+    var oscL, gainL_Master, gainL_LeftOut, gainL_RightOut;
+    var oscR, gainR_Master, gainR_LeftOut, gainR_RightOut;
+    var nNode, nFilt, nGain;
+    
+    var isPlay = false;
+    var nextT = 0, timer;
+
+    document.getElementById('start').addEventListener('click', function() {
+        if(isPlay) return;
+        try {
+            var AC = window.AudioContext || window.webkitAudioContext;
+            ctx = new AC();
+
+            // --- CHANNEL MERGER (The Output Mixer) ---
+            // Channel 0 = Left Speaker, Channel 1 = Right Speaker
+            merger = ctx.createChannelMerger(2);
+            merger.connect(ctx.destination);
+
+            // --- 1. LEFT TONE (Carrier) ---
+            oscL = ctx.createOscillator();
+            gainL_Master = ctx.createGain();
+            // Create split outputs for manual panning
+            gainL_LeftOut = ctx.createGain(); // How much of Base goes to Left Ear
+            gainL_RightOut = ctx.createGain(); // How much of Base goes to Right Ear
+            
+            oscL.connect(gainL_Master);
+            gainL_Master.connect(gainL_LeftOut).connect(merger, 0, 0); // Connect to Ch 0 (Left)
+            gainL_Master.connect(gainL_RightOut).connect(merger, 0, 1); // Connect to Ch 1 (Right)
+            oscL.start();
+
+            // --- 2. RIGHT TONE (Delta) ---
+            oscR = ctx.createOscillator();
+            gainR_Master = ctx.createGain();
+            // Create split outputs
+            gainR_LeftOut = ctx.createGain(); 
+            gainR_RightOut = ctx.createGain(); 
+            
+            oscR.connect(gainR_Master);
+            gainR_Master.connect(gainR_LeftOut).connect(merger, 0, 0);
+            gainR_Master.connect(gainR_RightOut).connect(merger, 0, 1);
+            oscR.start();
+
+            // --- 3. NOISE (Mono source -> Stereo Out) ---
+            var bSize = ctx.sampleRate * 2;
+            var buf = ctx.createBuffer(1, bSize, ctx.sampleRate);
+            var d = buf.getChannelData(0);
+            for(var i=0; i<bSize; i++) d[i] = Math.random()*2-1;
+
+            nNode = ctx.createBufferSource(); nNode.buffer = buf; nNode.loop = true;
+            nFilt = ctx.createBiquadFilter(); nFilt.type = 'lowpass';
+            nGain = ctx.createGain(); nGain.value = 0;
+            
+            // Noise goes to both ears equally
+            nNode.connect(nFilt).connect(nGain).connect(ctx.destination);
+            nNode.start();
+
+            // --- 4. START RHYTHM ---
+            nextT = ctx.currentTime + 0.1;
+            runSeq();
+
+            // --- UI UPDATES ---
+            isPlay = true;
+            this.innerText = "AUDIO RUNNING";
+            this.style.background = "#00ff88"; this.style.color = "#000";
+            st.innerText = "Status: ACTIVE (Matrix Mode)";
+            
+            upd(); // Apply initial settings
+
+        } catch(e) { alert("Error: " + e); }
+    });
+
+    function upd() {
+        if(!ctx) return;
+        var t = ctx.currentTime;
+
+        // FREQUENCIES
+        var base = parseFloat(val('baseNum'));
+        var delta = parseFloat(val('deltaNum'));
+        oscL.frequency.setTargetAtTime(base, t, 0.1);
+        oscR.frequency.setTargetAtTime(base + delta, t, 0.1);
+
+        // MASTER VOLUMES
+        gainL_Master.gain.setTargetAtTime(parseFloat(val('baseVol')), t, 0.1);
+        gainR_Master.gain.setTargetAtTime(parseFloat(val('deltaVol')), t, 0.1);
+
+        // MANUAL PANNING MATH
+        // This replaces the browser's PannerNode with explicit volume logic
+        setMatrixPan(val('basePan'), gainL_LeftOut, gainL_RightOut);
+        setMatrixPan(val('deltaPan'), gainR_LeftOut, gainR_RightOut);
+
+        // NOISE
+        nGain.gain.setTargetAtTime(parseFloat(val('nVol')), t, 0.1);
+        var nT = val('nType');
+        var nC = parseFloat(val('nFilter'));
+        
+        nFilt.type = 'lowpass';
+        var cut = nC;
+        if(nT === 'brown') cut = nC * 0.5;
+        if(nT === 'white') cut = nC * 2.5;
+        if(cut > 20000) cut = 20000;
+        if(cut < 20) cut = 20;
+        nFilt.frequency.setTargetAtTime(cut, t, 0.1);
+    }
+
+    // THE MATRIX PANNER
+    // Input: pan value (-1 to 1), LeftGainNode, RightGainNode
+    function setMatrixPan(panVal, nodeL, nodeR) {
+        var pan = parseFloat(panVal);
+        // Linear Equal Power approximation
+        // -1 (Left): L=1, R=0
+        // 0 (Center): L=1, R=1 (or 0.7 each)
+        // 1 (Right): L=0, R=1
+        
+        var volL = (pan <= 0) ? 1 : 1 - pan;
+        var volR = (pan >= 0) ? 1 : 1 + pan;
+        
+        nodeL.gain.setTargetAtTime(volL, ctx.currentTime, 0.05);
+        nodeR.gain.setTargetAtTime(volR, ctx.currentTime, 0.05);
+    }
+
+    function kick(time) {
+        if(!document.getElementById('kToggle').checked) return;
+        var o = ctx.createOscillator();
+        var g = ctx.createGain();
+        o.connect(g).connect(ctx.destination);
+
+        var tone = parseFloat(val('kTone'));
+        var dec = parseFloat(val('kDecay'));
+        
+        o.frequency.setValueAtTime(tone, time);
+        o.frequency.exponentialRampToValueAtTime(10, time + dec);
+
+        g.gain.setValueAtTime(parseFloat(val('kVol')), time);
+        g.gain.exponentialRampToValueAtTime(0.001, time + dec);
+
+        o.start(time); o.stop(time + dec);
+
+        setTimeout(function(){
+            var l = document.getElementById('beat-led');
+            l.style.background = "#00ff88";
+            l.style.boxShadow = "0 0 10px #00ff88";
+            setTimeout(function(){ l.style.background = "#333"; l.style.boxShadow = "none"; }, 50);
+        }, (time - ctx.currentTime)*1000);
+    }
+
+    function runSeq() {
+        var bpm = parseInt(val('bpmNum'));
+        if(bpm < 1) bpm = 1;
+        var spb = 60.0 / bpm;
+        while(nextT < ctx.currentTime + 0.1) {
+            kick(nextT);
+            nextT += spb;
+        }
+        timer = setTimeout(runSeq, 25);
+    }
+
+    // UI Helpers
+    function val(id) { return document.getElementById(id).value; }
+    function link(s, n) {
+        var sl = document.getElementById(s), nb = document.getElementById(n);
+        sl.oninput = function(){ nb.value = this.value; upd(); };
+        nb.oninput = function(){ sl.value = this.value; upd(); };
+    }
+
+    link('baseSlide','baseNum'); link('deltaSlide','deltaNum'); link('bpmSlide','bpmNum');
+    
+    var inputs = ['baseVol','basePan','deltaVol','deltaPan','nType','nFilter','nVol','kTone','kDecay','kVol'];
+    inputs.forEach(function(id){ document.getElementById(id).addEventListener('input', upd); });
+});
+</script>
+</body>
+</html>
