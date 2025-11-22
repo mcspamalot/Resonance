@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resonance Generator v9</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2 { color: #00d2ff; text-align: center; }
+        .control-group {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .col { flex: 1; min-width: 200px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type=range] { width: 100%; cursor: pointer; }
+        input[type=number] {
+            background: #333; border: 1px solid #555; color: #fff;
+            padding: 5px; border-radius: 4px; width: 80px;
+        }
+        select, textarea {
+            background: #333; border: 1px solid #555; color: #fff;
+            padding: 5px; border-radius: 4px; width: 100%;
+        }
+        button {
+            background: #00d2ff; color: #000; border: none;
+            padding: 10px 20px; border-radius: 4px;
+            font-weight: bold; cursor: pointer; text-transform: uppercase;
+        }
+        button:hover { background: #33e0ff; }
+        button.stop { background: #ff4444; color: white; }
+        
+        .val-display { float: right; font-weight: normal; font-size: 0.9em; color: #aaa; }
+        
+        #presetBox {
+            height: 60px;
+            font-family: monospace;
+            font-size: 0.8em;
+            resize: vertical;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Resonance Engine v9</h1>
+
+    <div class="control-group" style="text-align: center;">
+        <button id="powerBtn" onclick="toggleEngine()">Start Engine</button>
+        <p style="font-size: 0.9em; color: #888; margin-top: 10px;">
+            (Volumes are initialized to 0. Click Start then increase volumes.)
+        </p>
+    </div>
+
+    <div class="control-group">
+        <h2>Binaural Frequencies</h2>
+        <div class="row">
+            <div class="col">
+                <label>Base Frequency (Hz) <span id="dispBase" class="val-display">200</span></label>
+                <input type="range" id="baseFreq" min="20" max="1000" value="200" oninput="updateBinaural()">
+            </div>
+            <div class="col">
+                <label>Delta (Hz) <span id="dispDelta" class="val-display">4.0</span></label>
+                <input type="range" id="deltaFreq" min="0" max="40" step="0.1" value="4" oninput="updateBinaural()">
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <label style="color: #00d2ff;">Left Ear</label>
+                <label>Volume <span id="dispVolL" class="val-display">0</span></label>
+                <input type="range" id="volL" min="0" max="1" step="0.01" value="0" oninput="updateVolume('L')">
+                <label>Pan <span id="dispPanL" class="val-display">-1.0</span></label>
+                <input type="range" id="panL" min="-1" max="1" step="0.1" value="-1" oninput="updatePan()">
+            </div>
+            <div class="col">
+                <label style="color: #ff0077;">Right Ear</label>
+                <label>Volume <span id="dispVolR" class="val-display">0</span></label>
+                <input type="range" id="volR" min="0" max="1" step="0.01" value="0" oninput="updateVolume('R')">
+                <label>Pan <span id="dispPanR" class="val-display">1.0</span></label>
+                <input type="range" id="panR" min="-1" max="1" step="0.1" value="1" oninput="updatePan()">
+            </div>
+        </div>
+        <div class="row">
+            <div class="col">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="lockVol" style="width: auto; margin-right: 10px;"> 
+                    Lock Left/Right Volumes
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <h2>Noise Generator</h2>
+        <div class="row">
+            <div class="col">
+                <label>Type</label>
+                <select id="noiseType" onchange="updateNoiseType()">
+                    <option value="white">White Noise</option>
+                    <option value="pink" selected>Pink Noise</option>
+                    <option value="brown">Brown Noise</option>
+                </select>
+            </div>
+            <div class="col">
+                <label>Volume <span id="dispNoiseVol" class="val-display">0</span></label>
+                <input type="range" id="noiseVol" min="0" max="0.5" step="0.01" value="0" oninput="updateNoise()">
+            </div>
+        </div>
+        <div class="row">
+            <div class="col">
+                <label>Filter Cutoff (Hz) <span id="dispFilter" class="val-display">1000</span></label>
+                <input type="range" id="noiseFilter" min="50" max="5000" value="1000" oninput="updateNoise()">
+            </div>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <h2>808 Beat</h2>
+        <div class="row">
+            <div class="col">
+                <label>Tempo (BPM) <span id="dispTempo" class="val-display">120</span></label>
+                <input type="range" id="beatTempo" min="40" max="800" value="120" oninput="updateBeatParams()">
+            </div>
+            <div class="col">
+                <label>Volume <span id="dispBeatVol" class="val-display">0</span></label>
+                <input type="range" id="beatVol" min="0" max="1" step="0.01" value="0" oninput="updateBeatParams()">
+            </div>
+            <div class="col">
+                <label>Tone (Decay) <span id="dispTone" class="val-display">Medium</span></label>
+                <input type="range" id="beatTone" min="0.1" max="1.0" step="0.05" value="0.5" oninput="updateBeatParams()">
+            </div>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <h2>Presets</h2>
+        <p style="font-size: 0.8em; color: #aaa;">Copy this text to save your settings. Paste text here and click Load to restore.</p>
+        <textarea id="presetBox" oninput="updateFromTextManual()"></textarea>
+        <div style="margin-top: 10px;">
+            <button onclick="loadPreset()">Load Preset from Box</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Audio Context & State ---
+        let ctx;
+        let isPlaying = false;
+
+        // Binaural Nodes
+        let oscL, oscR, gainL, gainR, pannerL, pannerR;
+        
+        // Noise Nodes
+        let noiseSource, noiseGain, noiseFilter;
+        let noiseBuffer = {}; // Store buffers for White, Pink, Brown
+
+        // Beat State
+        let nextNoteTime = 0;
+        let timerID;
+        let beatParams = { bpm: 120, vol: 0, tone: 0.5 };
+
+        // Initialize Audio Context on user interaction
+        function initAudio() {
+            if (!ctx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                ctx = new AudioContext();
+                setupBinaural();
+                setupNoise();
+            }
+        }
+
+        function toggleEngine() {
+            const btn = document.getElementById('powerBtn');
+            if (!ctx) initAudio();
+
+            if (ctx.state === 'suspended') {
+                ctx.resume().then(() => {
+                    isPlaying = true;
+                    btn.textContent = "Stop Engine";
+                    btn.classList.add('stop');
+                    scheduler(); // Start the beat scheduler
+                });
+            } else if (ctx.state === 'running') {
+                ctx.suspend().then(() => {
+                    isPlaying = false;
+                    btn.textContent = "Start Engine";
+                    btn.classList.remove('stop');
+                    clearTimeout(timerID); // Stop the beat scheduler
+                });
+            }
+        }
+
+        // --- Binaural System ---
+        function setupBinaural() {
+            oscL = ctx.createOscillator();
+            oscR = ctx.createOscillator();
+            gainL = ctx.createGain();
+            gainR = ctx.createGain();
+            pannerL = ctx.createStereoPanner();
+            pannerR = ctx.createStereoPanner();
+
+            oscL.connect(gainL).connect(pannerL).connect(ctx.destination);
+            oscR.connect(gainR).connect(pannerR).connect(ctx.destination);
+
+            oscL.start();
+            oscR.start();
+            
+            // Apply initial values from DOM
+            updateBinaural();
+            updateVolume('L');
+            updateVolume('R');
+            updatePan();
+        }
+
+        function updateBinaural() {
+            const base = parseFloat(document.getElementById('baseFreq').value);
+            const delta = parseFloat(document.getElementById('deltaFreq').value);
+            
+            document.getElementById('dispBase').innerText = base;
+            document.getElementById('dispDelta').innerText = delta.toFixed(1);
+
+            if (oscL && oscR) {
+                oscL.frequency.setTargetAtTime(base, ctx.currentTime, 0.1);
+                // Right ear gets Base + Delta
+                oscR.frequency.setTargetAtTime(base + delta, ctx.currentTime, 0.1);
+            }
+            generatePresetString();
+        }
+
+        function updateVolume(side) {
+            // UPDATE 2: Volume Lock Logic
+            const lock = document.getElementById('lockVol').checked;
+            const val = document.getElementById(`vol${side}`).value;
+            
+            // If locked, update the OTHER slider visually first
+            if (lock) {
+                const otherSide = side === 'L' ? 'R' : 'L';
+                const otherSlider = document.getElementById(`vol${otherSide}`);
+                if (otherSlider.value !== val) {
+                    otherSlider.value = val;
+                    // Update the display for the other side
+                    document.getElementById(`dispVol${otherSide}`).innerText = val;
+                    // Apply gain to the other side
+                    if (side === 'L' && gainR) gainR.gain.setTargetAtTime(val, ctx.currentTime, 0.1);
+                    if (side === 'R' && gainL) gainL.gain.setTargetAtTime(val, ctx.currentTime, 0.1);
+                }
+            }
+
+            // Update current side
+            document.getElementById(`dispVol${side}`).innerText = val;
+            if (side === 'L' && gainL) gainL.gain.setTargetAtTime(val, ctx.currentTime, 0.1);
+            if (side === 'R' && gainR) gainR.gain.setTargetAtTime(val, ctx.currentTime, 0.1);
+            
+            generatePresetString();
+        }
+
+        function updatePan() {
+            const pL = parseFloat(document.getElementById('panL').value);
+            const pR = parseFloat(document.getElementById('panR').value);
+            
+            document.getElementById('dispPanL').innerText = pL;
+            document.getElementById('dispPanR').innerText = pR;
+
+            if (pannerL) pannerL.pan.setTargetAtTime(pL, ctx.currentTime, 0.1);
+            if (pannerR) pannerR.pan.setTargetAtTime(pR, ctx.currentTime, 0.1);
+            generatePresetString();
+        }
+
+        // --- Noise System ---
+        function setupNoise() {
+            const bufferSize = 2 * ctx.sampleRate; // 2 seconds buffer
+            
+            // White Noise
+            const wBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const wData = wBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) wData[i] = Math.random() * 2 - 1;
+            noiseBuffer['white'] = wBuffer;
+
+            // Pink Noise
+            const pBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const pData = pBuffer.getChannelData(0);
+            let b0, b1, b2, b3, b4, b5, b6;
+            b0 = b1 = b2 = b3 = b4 = b5 = b6 = 0.0;
+            for (let i = 0; i < bufferSize; i++) {
+                let white = Math.random() * 2 - 1;
+                b0 = 0.99886 * b0 + white * 0.0555179;
+                b1 = 0.99332 * b1 + white * 0.0750759;
+                b2 = 0.96900 * b2 + white * 0.1538520;
+                b3 = 0.86650 * b3 + white * 0.3104856;
+                b4 = 0.55000 * b4 + white * 0.5329522;
+                b5 = -0.7616 * b5 - white * 0.0168981;
+                pData[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+                pData[i] *= 0.11;
+                b6 = white * 0.115926;
+            }
+            noiseBuffer['pink'] = pBuffer;
+
+            // Brown Noise
+            const brBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const brData = brBuffer.getChannelData(0);
+            let lastOut = 0.0;
+            for (let i = 0; i < bufferSize; i++) {
+                let white = Math.random() * 2 - 1;
+                lastOut = (lastOut + (0.02 * white)) / 1.02;
+                brData[i] = lastOut * 3.5; 
+            }
+            noiseBuffer['brown'] = brBuffer;
+
+            // Nodes
+            noiseGain = ctx.createGain();
+            noiseFilter = ctx.createBiquadFilter();
+            noiseFilter.type = 'lowpass';
+            
+            noiseGain.connect(noiseFilter).connect(ctx.destination);
+            
+            // Init settings
+            updateNoiseType();
+            updateNoise();
+        }
+
+        function updateNoiseType() {
+            const type = document.getElementById('noiseType').value;
+            if (!ctx) return;
+
+            // Stop old source if exists
+            if (noiseSource) {
+                try { noiseSource.stop(); } catch(e){}
+                noiseSource.disconnect();
+            }
+
+            noiseSource = ctx.createBufferSource();
+            noiseSource.buffer = noiseBuffer[type];
+            noiseSource.loop = true;
+            noiseSource.connect(noiseGain);
+            noiseSource.start();
+            generatePresetString();
+        }
+
+        function updateNoise() {
+            const vol = parseFloat(document.getElementById('noiseVol').value);
+            const freq = parseFloat(document.getElementById('noiseFilter').value);
+            
+            document.getElementById('dispNoiseVol').innerText = vol;
+            document.getElementById('dispFilter').innerText = freq;
+
+            if (noiseGain) noiseGain.gain.setTargetAtTime(vol, ctx.currentTime, 0.1);
+            if (noiseFilter) noiseFilter.frequency.setTargetAtTime(freq, ctx.currentTime, 0.1);
+            generatePresetString();
+        }
+
+        // --- 808 Beat System ---
+        function updateBeatParams() {
+            beatParams.bpm = parseInt(document.getElementById('beatTempo').value);
+            beatParams.vol = parseFloat(document.getElementById('beatVol').value);
+            beatParams.tone = parseFloat(document.getElementById('beatTone').value);
+
+            document.getElementById('dispTempo').innerText = beatParams.bpm;
+            document.getElementById('dispBeatVol').innerText = beatParams.vol;
+            
+            let toneLabel = "Short";
+            if (beatParams.tone > 0.3) toneLabel = "Medium";
+            if (beatParams.tone > 0.7) toneLabel = "Long (Boom)";
+            document.getElementById('dispTone').innerText = toneLabel;
+            generatePresetString();
+        }
+
+        function playKick(time) {
+            if (beatParams.vol <= 0.001) return; // Silent
+
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            // Frequency Sweep (Kick "Thump")
+            osc.frequency.setValueAtTime(150, time);
+            osc.frequency.exponentialRampToValueAtTime(40, time + 0.1);
+
+            // Amplitude Envelope
+            gain.gain.setValueAtTime(beatParams.vol, time);
+            // The "Tone" parameter controls the decay length
+            gain.gain.exponentialRampToValueAtTime(0.001, time + beatParams.tone);
+
+            osc.start(time);
+            osc.stop(time + beatParams.tone);
+        }
+
+        function scheduler() {
+            // Lookahead scheduler
+            while (nextNoteTime < ctx.currentTime + 0.1) {
+                playKick(nextNoteTime);
+                // Calculate next beat time based on BPM
+                const secondsPerBeat = 60.0 / beatParams.bpm;
+                nextNoteTime += secondsPerBeat;
+            }
+            timerID = setTimeout(scheduler, 25);
+        }
+
+        // --- Preset System (UPDATE 4) ---
+        function generatePresetString() {
+            const settings = {
+                base: document.getElementById('baseFreq').value,
+                delta: document.getElementById('deltaFreq').value,
+                volL: document.getElementById('volL').value,
+                panL: document.getElementById('panL').value,
+                volR: document.getElementById('volR').value,
+                panR: document.getElementById('panR').value,
+                lock: document.getElementById('lockVol').checked,
+                nType: document.getElementById('noiseType').value,
+                nVol: document.getElementById('noiseVol').value,
+                nFilt: document.getElementById('noiseFilter').value,
+                bpm: document.getElementById('beatTempo').value,
+                bVol: document.getElementById('beatVol').value,
+                bTone: document.getElementById('beatTone').value
+            };
+            
+            // Avoid updating the box while the user is typing into it
+            if (document.activeElement !== document.getElementById('presetBox')) {
+                document.getElementById('presetBox').value = JSON.stringify(settings);
+            }
+        }
+
+        function loadPreset() {
+            const box = document.getElementById('presetBox');
+            try {
+                const s = JSON.parse(box.value);
+                
+                // Apply values to DOM
+                document.getElementById('baseFreq').value = s.base;
+                document.getElementById('deltaFreq').value = s.delta;
+                document.getElementById('volL').value = s.volL;
+                document.getElementById('panL').value = s.panL;
+                document.getElementById('volR').value = s.volR;
+                document.getElementById('panR').value = s.panR;
+                document.getElementById('lockVol').checked = s.lock;
+                document.getElementById('noiseType').value = s.nType;
+                document.getElementById('noiseVol').value = s.nVol;
+                document.getElementById('noiseFilter').value = s.nFilt;
+                document.getElementById('beatTempo').value = s.bpm;
+                document.getElementById('beatVol').value = s.bVol;
+                document.getElementById('beatTone').value = s.bTone;
+
+                // Trigger updates
+                // If audio is running, these functions update the live sound
+                if(ctx) {
+                    updateBinaural();
+                    // Manually update volumes separately to respect the 'lock' logic or bypass it properly
+                    // We just call the update functions directly based on the values we just set
+                    document.getElementById('dispVolL').innerText = s.volL;
+                    document.getElementById('dispVolR').innerText = s.volR;
+                    if(gainL) gainL.gain.setTargetAtTime(s.volL, ctx.currentTime, 0.1);
+                    if(gainR) gainR.gain.setTargetAtTime(s.volR, ctx.currentTime, 0.1);
+                    
+                    updatePan();
+                    updateNoiseType();
+                    updateNoise();
+                    updateBeatParams();
+                } else {
+                    // Just update visual numbers if engine not started
+                    document.getElementById('dispBase').innerText = s.base;
+                    document.getElementById('dispDelta').innerText = parseFloat(s.delta).toFixed(1);
+                    document.getElementById('dispVolL').innerText = s.volL;
+                    document.getElementById('dispVolR').innerText = s.volR;
+                    // ... etc
+                }
+
+            } catch (e) {
+                alert("Invalid Preset JSON");
+            }
+        }
+
+        function updateFromTextManual() {
+            // Optional: Could auto-load as you type, but safer to use the button
+        }
+
+        // Initial setup
+        generatePresetString();
+
+    </script>
+</body>
+</html>
